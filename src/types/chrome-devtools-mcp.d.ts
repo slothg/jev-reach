@@ -14,8 +14,27 @@ declare module "chrome-devtools-mcp/build/src/index.js" {
     static from(serverArgs: Record<string, unknown>, options?: { logFile?: unknown }): Promise<McpServer>;
     connect(transport: unknown): Promise<void>;
     close(): Promise<void>;
+    getContextForReach(): Promise<{
+      getPages(): McpPage[];
+      getSelectedMcpPage(): McpPage;
+      getPageById(pageId: number): McpPage;
+      selectPage(page: McpPage): void;
+    }>;
   }
   export function logDisclaimers(args: Record<string, unknown>): void;
+}
+
+interface McpPage {
+  id: number;
+  pptrPage: import("puppeteer-core").Page;
+  acquire(): Promise<void>;
+  activateEmulation(): Promise<void>;
+  release(): Promise<void>;
+}
+
+declare module "chrome-devtools-mcp/build/src/jev-shared-pages.js" {
+  export function drainSharedPageReleases(): Promise<void>;
+  export function sharedPageDiagnostics(): Array<{ url: string; owners: number; consoleMessages: number; requests: number }>;
 }
 
 declare module "chrome-devtools-mcp/build/src/config/mcp-options.js" {

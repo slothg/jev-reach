@@ -26,3 +26,11 @@ test("reach without a key fails before touching the browser", async () => {
     assert.match(payload(result).error, /No API key/);
   });
 });
+
+test("the first CLI option reaches the upstream parser", async () => {
+  await withClient({ args: ["--no-category-performance", "--isolated", "--headless"] }, async (client) => {
+    const names = (await client.listTools()).tools.map(tool => tool.name);
+    assert.ok(names.includes("list_pages"));
+    assert.ok(!names.includes("performance_start_trace"), "the first flag must not be discarded as an argv prefix");
+  });
+});

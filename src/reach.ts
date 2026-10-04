@@ -88,7 +88,9 @@ interface ReachInput {
 
 const mutex = new Mutex();
 
-export function registerReach(server: SdkMcpServer, serverArgs: Record<string, unknown>): void {
+type ResolvePage = (prefix?: string) => Promise<{ page: Page; pageId: number }>;
+
+export function registerReach(server: SdkMcpServer, serverArgs: Record<string, unknown>, resolvePage?: ResolvePage): void {
   server.registerTool(
     "reach",
     {
@@ -115,7 +117,7 @@ export function registerReach(server: SdkMcpServer, serverArgs: Record<string, u
     async (input, extra) => {
       const release = await mutex.acquire();
       try {
-        const result = await runReach(server, serverArgs, input as ReachInput, extra.signal);
+        const result = await runReach(server, serverArgs, input as ReachInput, extra.signal, resolvePage);
         return {
           content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
           structuredContent: result as unknown as Record<string, unknown>,
@@ -221,7 +223,7 @@ async function pickPage(browser: Browser, listed: ListedPage[], prefix: string |
 
 // ── The walk ────────────────────────────────────────────────────────────────
 
-async function runReach(server: SdkMcpServer, serverArgs: Record<string, unknown>, input: ReachInput, signal: AbortSignal): Promise<ReachResult> {
+async function runReach(server: SdkMcpServer, serverArgs: Record<string, unknown>, input: ReachInput, signal: AbortSignal, resolvePage?: ResolvePage): Promise<ReachResult> {
   const started = performance.now();
   const values = input.values ?? {};
   const valueKeys = Object.keys(values);
@@ -235,7 +237,9 @@ async function runReach(server: SdkMcpServer, serverArgs: Record<string, unknown
 
   const pagesText = await warmUp(server, signal);
   const browser = await currentBrowser(serverArgs);
-  const { page, pageId } = await pickPage(browser, parsePages(pagesText), input.tab_url_prefix);
+  const { page, pageId } = resolvePage
+    ? await resolvePage(input.tab_url_prefix)
+    : await pickPage(browser, parsePages(pagesText), input.tab_url_prefix);
 
   const finish = (status: FinalStatus, snap: Pick<RawSnapshot, "url" | "title">, extra: Partial<ReachResult> = {}): ReachResult => ({
     status,

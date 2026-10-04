@@ -1,0 +1,54 @@
+{
+  "package": "chrome-devtools-mcp",
+  "version": "1.9.0",
+  "upstream": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+  "files": [
+    {
+      "path": "build/src/McpPage.js",
+      "originalSha256": "829f11b3cb4c7b87dbb4f5b6a3f62583f4fc05746daee21e629287247debb340",
+      "patchedSha256": "b1ba7b030c0a20a7ae8980801e3422af1edfe5b21cc50e6227f3bd6855ca6a2a"
+    },
+    {
+      "path": "build/src/ToolHandler.js",
+      "originalSha256": "49dd8d88257394e778573e3449af6e03fdc2fab73cc8370af26205aeecd8ab7d",
+      "patchedSha256": "3ced37b61b87b0713c97376a91eea567dc3260e44f8c45c791edd2fccfa040c9"
+    },
+    {
+      "path": "build/src/tools/pages.js",
+      "originalSha256": "50983bd1b2f01ffa3273de3353e28fd44795d026f2b62bcc783e19156ee0147d",
+      "patchedSha256": "f2f0689875a355e6aec16940b5210d38277ecc2a4c0b8038ed1fc65f52574024"
+    },
+    {
+      "path": "build/src/index.js",
+      "originalSha256": "793dd988623744d46395e586500b5405fd17694cc4bef98d6593bee01563374a",
+      "patchedSha256": "8771df8f988eec91b3e01106f498459ed97e1787bbde403e9f4d7910f2ee08a2"
+    },
+    {
+      "path": "build/src/collectors/PageCollector.js",
+      "originalSha256": "371f37137e63a1951df86998e7235b16ec164e8aa76d61838960ebeff90593e0",
+      "patchedSha256": "7094b06470db6a03d8a8f027efd5e99722e4de1a357f9346616b5ed69ff75ee1",
+      "payload": "PageCollector.js"
+    },
+    {
+      "path": "build/src/tools/input.js",
+      "originalSha256": "924710a7a0d4de836ba477bf35e13a37eeee72879b29408fa544c0a8373da0e9",
+      "patchedSha256": "dc4584815d47177acce7ee88afa23d219eb5b0ef410237893c0689e4a9ee79e6",
+      "payload": "input.js"
+    },
+    {
+      "path": "build/src/jev-shared-pages.js",
+      "patchedSha256": "1acd4e2fcf0bd9312b3d43cda7bf829b84aac891c310ee51deaa113ab98482f8",
+      "payload": "jev-shared-pages.js"
+    },
+    {
+      "path": "build/src/tools/qa-pointer-path.js",
+      "patchedSha256": "50188fc359eae9997ca924306c65495f0c9e0dec43c6c59cd999029a02f54a3a",
+      "payload": "qa-pointer-path.js"
+    },
+    {
+      "path": "build/src/tools/script.js",
+      "originalSha256": "99a0a8c40209c71fb7ca2822fa7150f0550d76a4c032d465e927456501093279",
+      "patchedSha256": "8611f63a097bf6cc4f343bb9fe323d8cfadce6ab5e95809c97a458f50d5f7637"
+    }
+  ]
+}

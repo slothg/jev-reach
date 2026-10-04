@@ -1,5 +1,12 @@
 # jev-reach
 
+This fork adds a normal MCP STDIO bridge that starts and reuses one shared
+loopback HTTP backend, lazy page collectors, and reversible compatibility
+patches for chrome-devtools-mcp 1.9.0. The original STDIO entry remains available.
+See the [shared service guide](docs/shared-service/jev-reach-shared-service-usage.md)
+for startup, session ownership, limitations, rollback, and upstream updates.
+The original project is [rashedInt32/jev-reach](https://github.com/rashedInt32/jev-reach).
+
 [chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp) plus one
 tool. `reach` walks the browser to the spot where you want to look, using
 [TypeSafe Jev](https://docs.typesafe.ai) to pick each click. Then you make one

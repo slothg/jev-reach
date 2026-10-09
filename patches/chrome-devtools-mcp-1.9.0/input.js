@@ -578,4 +578,4 @@ export const pressKey = definePageTool({
     },
 });
 //# sourceMappingURL=input.js.map
-export { qaPointerPath, qaPreviewInstall, qaPreviewRemove } from './qa-pointer-path.js';
+export { qaPointerPath, qaPreviewInstall, qaPreviewRemove, qaPageIdentity } from './qa-pointer-path.js';

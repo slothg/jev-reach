@@ -32,8 +32,11 @@
     {
       "path": "build/src/tools/input.js",
       "originalSha256": "924710a7a0d4de836ba477bf35e13a37eeee72879b29408fa544c0a8373da0e9",
-      "patchedSha256": "dc4584815d47177acce7ee88afa23d219eb5b0ef410237893c0689e4a9ee79e6",
-      "payload": "input.js"
+      "patchedSha256": "7472025a13b42b9c44d9717a15318f5c49dafe1dae3855a8aab359b45c96d7a4",
+      "payload": "input.js",
+      "previousPatchedSha256s": [
+        "dc4584815d47177acce7ee88afa23d219eb5b0ef410237893c0689e4a9ee79e6"
+      ]
     },
     {
       "path": "build/src/jev-shared-pages.js",
@@ -42,8 +45,12 @@
     },
     {
       "path": "build/src/tools/qa-pointer-path.js",
-      "patchedSha256": "50188fc359eae9997ca924306c65495f0c9e0dec43c6c59cd999029a02f54a3a",
-      "payload": "qa-pointer-path.js"
+      "patchedSha256": "e67cb3e064a32b2f689adfd4f0f79086f1202fe2b547e7a8829ec544c4c103ae",
+      "payload": "qa-pointer-path.js",
+      "previousPatchedSha256s": [
+        "50188fc359eae9997ca924306c65495f0c9e0dec43c6c59cd999029a02f54a3a",
+        "575b0f6cf686b86d2761f278b2e6d98fcee3bf2c8962f55be2f764dedc28a354"
+      ]
     },
     {
       "path": "build/src/tools/script.js",

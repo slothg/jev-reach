@@ -140,6 +140,30 @@ export const qaPointerPath = definePageTool({
 
 const entries = new WeakMap();
 
+export const qaPageIdentity = definePageTool({
+    name: 'qa_page_identity',
+    description: 'Read a stable browser/target digest for this existing page; client pageId aliases are not physical identities.',
+    annotations: { category: ToolCategory.INPUT, readOnlyHint: true },
+    schema: {}, blockedByDialog: true, verifyFilesSchema: {},
+    /** Read only the selected target metadata and detach the temporary CDP session. */
+    handler: async (request, response) => {
+        const page = request.page.pptrPage;
+        const session = await page.createCDPSession();
+        try {
+            const { targetInfo } = await session.send('Target.getTargetInfo');
+            const endpoint = page.browser().wsEndpoint();
+            if (!endpoint || !targetInfo.targetId || targetInfo.type !== 'page') {
+                throw new Error('TARGET_AMBIGUOUS: stable browser page identity unavailable');
+            }
+            const targetKey = createHash('sha256').update(JSON.stringify([endpoint, targetInfo.targetId])).digest('hex');
+            const metadata = await page.evaluate(() => ({origin: location.origin, engineVersion: window.cc ? cc.ENGINE_VERSION : null}));
+            response.appendResponseLine(JSON.stringify({targetKey, ...metadata}));
+        } finally {
+            await session.detach();
+        }
+    },
+});
+
 export const qaPreviewInstall = definePageTool({
     name: 'qa_preview_install',
     description: 'Install a digest-checked local QA bundle in this existing preview tab and its subsequent documents.',
@@ -147,6 +171,8 @@ export const qaPreviewInstall = definePageTool({
     schema: {
         bundlePath: zod.string().min(1), sha256: zod.string().regex(/^[a-f0-9]{64}$/),
         expectedOrigin: zod.string().regex(/^http:\/\/(localhost|127\.0\.0\.1):[0-9]+$/),
+        ownerId: zod.string().min(1).max(128),
+        ownerExpiresAtUnixMs: zod.number().finite().positive(),
     },
     blockedByDialog: true,
     verifyFilesSchema: {},
@@ -158,6 +184,9 @@ export const qaPreviewInstall = definePageTool({
     handler: async (request, response) => {
         const page = request.page.pptrPage;
         const params = request.params;
+        if (params.ownerExpiresAtUnixMs <= Date.now() || params.ownerExpiresAtUnixMs > Date.now() + 1800000) {
+            throw new Error('AUTH_EXPIRED: invalid enrollment lifetime');
+        }
         if (new URL(page.url()).origin !== params.expectedOrigin) {
             throw new Error('PROJECT_MISMATCH: selected Page origin');
         }
@@ -175,9 +204,16 @@ export const qaPreviewInstall = definePageTool({
                 window.__COCOS_QA_SOURCE__=${JSON.stringify(params.sha256)};return;
             }if(Date.now()<deadline){setTimeout(start,100);}}start();})();`;
         const previous = entries.get(page);
+        if (previous && previous.ownerId !== params.ownerId) {
+            if (Date.now() < previous.expiresAtUnixMs) { throw new Error('SESSION_BUSY: preview entry belongs to another enrollment'); }
+            await page.evaluate(ownerId => {
+                const runtime = window.__COCOS_QA__;
+                if (runtime?.platform.readBootstrap()?.sessionId === ownerId) { runtime.destroy(); delete window.__COCOS_QA__; }
+            }, previous.ownerId);
+        }
         if (previous) { await page.removeScriptToEvaluateOnNewDocument(previous.identifier); }
         const installed = await page.evaluateOnNewDocument(entry);
-        entries.set(page, installed);
+        entries.set(page, {...installed, ownerId: params.ownerId, expiresAtUnixMs: params.ownerExpiresAtUnixMs});
         await page.evaluate(entry);
         response.appendResponseLine(JSON.stringify({installed: true, sha256: params.sha256, refreshEntry: true, pageReloaded: false}));
     },
@@ -185,7 +221,8 @@ export const qaPreviewInstall = definePageTool({
 
 export const qaPreviewRemove = definePageTool({
     name: 'qa_preview_remove', description: 'Remove only this MCP client owned new-document QA entry and runtime.',
-    annotations: { category: ToolCategory.INPUT, readOnlyHint: false }, schema: {}, blockedByDialog: true, verifyFilesSchema: {},
+    annotations: { category: ToolCategory.INPUT, readOnlyHint: false },
+    schema: {ownerId: zod.string().min(1).max(128)}, blockedByDialog: true, verifyFilesSchema: {},
     /**
      * Revoke credentials and the owned persistent Page script without closing the tab.
      * @param request Existing page-scoped request.
@@ -194,10 +231,17 @@ export const qaPreviewRemove = definePageTool({
     handler: async (request, response) => {
         const page = request.page.pptrPage;
         const installed = entries.get(page);
+        if (installed && installed.ownerId !== request.params.ownerId) {
+            response.appendResponseLine(JSON.stringify({removed: false, foreignOwner: true, pageClosed: false})); return;
+        }
         if (installed) { await page.removeScriptToEvaluateOnNewDocument(installed.identifier); entries.delete(page); }
-        await page.evaluate(
-            /** Remove the explicitly owned independent runtime. */
-            () => {if(window.__COCOS_QA__){window.__COCOS_QA__.destroy();delete window.__COCOS_QA__;}});
-        response.appendResponseLine(JSON.stringify({removed: true, pageClosed: false}));
+        const runtimeRemoved = await page.evaluate(
+            /** Remove a runtime only when its saved bootstrap belongs to this enrollment. */
+            ownerId => {
+                const runtime = window.__COCOS_QA__;
+                if (!runtime || runtime.platform.readBootstrap()?.sessionId !== ownerId) { return false; }
+                runtime.destroy(); delete window.__COCOS_QA__; return true;
+            }, request.params.ownerId);
+        response.appendResponseLine(JSON.stringify({removed: true, runtimeRemoved, pageClosed: false}));
     },
 });

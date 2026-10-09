@@ -23,14 +23,15 @@ for (const entry of manifest.files) {
   try { current = await readFile(target); }
   catch (error) { if (error.code !== 'ENOENT' || !entry.payload || entry.originalSha256) throw error; }
   const digest = current ? hash(current) : undefined;
-  if (digest !== entry.originalSha256 && digest !== entry.patchedSha256) throw new Error(`Dependency drift: ${entry.path}`);
+  const isPatched = digest === entry.patchedSha256 || (entry.previousPatchedSha256s ?? []).includes(digest);
+  if (digest !== entry.originalSha256 && !isPatched) throw new Error(`Dependency drift: ${entry.path}`);
   const backup = join(backupRoot, entry.path);
   let original;
   if (entry.originalSha256) {
     try { original = await readFile(backup); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     if (original && hash(original) !== entry.originalSha256) throw new Error(`Backup drift: ${entry.path}`);
-    if (!original && digest === entry.patchedSha256) throw new Error(`Backup missing: ${entry.path}`);
+    if (!original && isPatched) throw new Error(`Backup missing: ${entry.path}`);
     original ??= current;
   }
   let patched = entry.payload ? await readFile(join(patchRoot, entry.payload)) : Buffer.from(transform(entry.path, original.toString('utf8')));

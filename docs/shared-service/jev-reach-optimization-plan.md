@@ -75,3 +75,17 @@ User-Agent 隔离失败后定位到 `evaluate_script` 自行解析页面、不�
 `~/.codex/config.toml` 仅替换 `mcp_servers.chrome-devtools.args[0]` 为 `~/.agents/mcp/jev-reach/node_modules/jev-reach/dist/bridge.js`，其余字段、参数、环境变量与切换前一致。完整备份位于 `my-codex/backups/codex/`，两个文件均字节一致：config SHA-256 `5ee4224c343cf5b7b37c77285427601f44fc646eee9a8165d5a5123b3ed027fd`；AGENTS SHA-256 `15181c8c20c617d4919f650d0f5223295d7fac25959f9d60e1386bc21a5d17ce`。切换前完整文件保留在 `~/.agents/mcp/jev-reach/backups/2026-10-04-before-http/`，名称沿用准备阶段命名，不表示最终使用 URL 配置。没有已加载的本任务 LaunchAgent，活动 plist 不存在。
 
 本机 `codex-cli 0.142.3` 直接读取完整配置时，因切换前已存在的 `features.context_management` 表报 `invalid type: map, expected a boolean`。该字段不是本次修改，保持原样；仅为只读检查执行 `codex -c 'features.context_management=false' mcp get chrome-devtools --json`，成功解析为 STDIO 和新入口，此临时覆盖不修改配置文件。静态 TOML 等值比较与实际 SDK 初始化也通过。已运行 Codex 连接器尚未在本任务中重启或重连，普通 Chrome 前台、真实 TypeSafe 与 Cocos 内存趋势仍待验收。
+
+## 2026-10-09：Cocos QA 物理目标和入口归属
+
+对应 CocosJevQA 原建议 1 的共享客户端隔离。McpContext 给同一物理页分配不同上下文 pageId，不能用该别名证明两个客户端正在操作不同标签页。新增窄只读 `qa_page_identity`，返回浏览器 wsEndpoint 与 CDP targetId 的摘要及 origin/engine，临时 CDP session 在 finally 中关闭；不返回浏览器连接地址，也不搜索游戏节点。该摘要由 QA 服务用于既有文件锁，手动 bootstrap 和正常 prepare 都走同一路径。
+
+qa_preview_install/qa_preview_remove 增加 enrollment 所有者和到期时间。活跃旧入口拒绝其他所有者替换，外来移除请求不操作入口或 Runtime；过期入口允许有界接替，仅销毁 bootstrap 属于旧 owner 的 Runtime。Python 关闭客户端时返回 cleanupFailures，入口清理失败不会伪称已清理。
+
+维护路径为现有 patches/input.js、qa-pointer-path.js、manifest.json 及 apply-devtools-patches.mjs；升级只接受清单明确列出的上一载荷摘要，原始文件备份摘要仍须一致，未知改动继续报 Dependency drift。原补丁回滚后的新增 helper 会保留，因此该已知载荷升级契约也是源码重新构建的必要条件。
+
+最小验证：`rtk npm run build`、`rtk node --test test/qa-identity.test.mjs`（身份/失败 detach/外来清理与替换/过期接替共 4 项）通过。实际两 SDK 客户端通过正式部署启动器、独立验证端口 41941 读取已开 localhost:7456 预览，pageId 13/31 的物理身份一致；没有安装 Runtime 或发送输入。退出后验证后台按 1 秒空闲策略退出。没有运行 npm test 或其他整套测试。
+
+本机已安装 `0.1.1-slothg.5` 文件；最终 tgz SHA-256 `477434b5257266c91bfdbdb63c5d54b52e7b9261d126656acc9d15ff9d6bcbe8`。执行 `npm pack --ignore-scripts`、运行目录 `npm install --omit=dev --no-audit --no-fund` 后，npm 未自动放行新版本的 package scripts，因此仅显式执行已审查的维护 patch 入口；没有批量批准其它脚本。安装目录九文件 `--check` 为 VERIFIED，维护脚本、QA 载荷、manifest 和编译入口与源码产物逐字节一致。
+
+安装完成时 4071 上的旧 v4 仍有活动客户端，先保留其运行进程。随后用户明确批准断开客户端并重启验收：核实 pending=0 和安装目录日志归属后，对旧 QA HTTP 与 Chrome v4 正常 SIGTERM；均正常退出，没有强制终止。正式 QA 启动器和 Chrome bridge 拉起新服务，4071 identity.version 为 `0.1.1-slothg.5`。App 原生 QA 对已有 noodleRestaurant 页签完成接入、3 步只读 case PASS、8 个报告证据大小/摘要校验和所属入口清理；不发送游戏输入。接入调用约 950ms，其中固定缓存复用 22ms；含证据导出的 case 调用约 184ms，Runtime 执行 4ms。关闭后 sessions=0/pending=0，用户预览仍可发现；没有改变 Chrome 的全局配置或关闭用户浏览器。报告目录：`/private/var/folders/s6/50pqc55x69d0z0dbyxn6cftc0000gp/T/CocosJevQA/reports/noodleRestaurant/run_fbc4eecc5ddd04bcbceeebe5168be4d6/`。本次覆盖原生只读链路，不代表真实输入、Android、刷新恢复和全规格验收。

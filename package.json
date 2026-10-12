@@ -1,6 +1,6 @@
 {
   "name": "jev-reach",
-  "version": "0.1.1-slothg.5",
+  "version": "0.1.1-slothg.7",
   "description": "chrome-devtools-mcp plus one tool: Jev walks the browser to the spot, Claude makes one devtools call there.",
   "type": "module",
   "license": "MIT",

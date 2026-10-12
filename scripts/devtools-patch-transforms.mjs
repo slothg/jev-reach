@@ -55,6 +55,13 @@ export class McpPage {
     async #initResources() {
         await Promise.allSettled([`],
       ["        void this.pptrPage.emulateFocusedPage(true).catch(error => {", "        await this.pptrPage.emulateFocusedPage(true).catch(error => {"],
+      ['        try {\n            const session = await this.pptrPage.createCDPSession();', `        let session;
+        try {
+            session = await this.pptrPage.createCDPSession();`],
+      ["            logger?.('Failed to initialize DevTools universe', e);", `            await session?.detach().catch(cleanupError => {
+                logger?.('Failed to detach failed DevTools initialization', cleanupError);
+            });
+            logger?.('Failed to initialize DevTools universe', e);`],
       ['        return this.#devtoolsUniverse;', `        const owner = this.#sharedLease?.owner();
         return owner ? owner.#devtoolsUniverse : this.#devtoolsUniverse;`],
       ['        return this.#dialog;', `        const owner = this.#sharedLease?.owner();
@@ -81,6 +88,46 @@ export class McpPage {
             });
         }`],
       ['    async getDevToolsData() {', '    async getDevToolsData() {\n        if (!this.hasAcquiredResources) return {};'],
+      ['        const result = await this.pptrPage.evaluate(async (name, args, ...elements) => {', `        const elementHandles = [];
+        let replacingSnapshot = false;
+        try {
+        const result = await this.pptrPage.evaluate(async (name, args, ...elements) => {`],
+      ['        const elementHandles = [];\n        for (let i = 0; i < (result.stashed ?? 0); i++) {', '        for (let i = 0; i < (result.stashed ?? 0); i++) {'],
+      ['        if (elementHandles.length) {\n            const env_2', '        if (elementHandles.length) {\n            replacingSnapshot = true;\n            const env_2'],
+      ['        response.appendResponseLine(JSON.stringify(resultWithUids, null, 2));\n    }\n    async getElementByUid(uid) {', `        response.appendResponseLine(JSON.stringify(resultWithUids, null, 2));
+        } catch (error) {
+            await this.pptrPage.evaluate(() => {
+                if (window.__dtmcp) window.__dtmcp.stashedElements = undefined;
+            }).catch(cleanupError => {
+                logger?.('Failed to clear third-party DOM stash', cleanupError);
+            });
+            if (replacingSnapshot) {
+                this.extraHandles = [];
+                this.textSnapshot = null;
+            }
+            await Promise.allSettled(elementHandles.map(handle => Promise.resolve().then(() => handle.dispose())));
+            throw error;
+        }
+    }
+    async getElementByUid(uid) {`],
+    );
+  } else if (path === 'build/src/devtools/DevtoolsUtils.js') {
+    edits.push(
+    ["import { DevTools } from '../third_party/index.js';", "import { DevTools } from '../third_party/index.js';\nimport { logger } from '../utils/logger.js';"],
+    [
+      '    const sourceMaps = options?.sourceMaps ?? true;',
+      `    try {
+    // Another inspector's async stack request also reaches the user's DevTools.
+    universe.settings.resolve(DevTools.SDKSettings.disableAsyncStackTracesSettingDescriptor).set(true);
+    const sourceMaps = options?.sourceMaps ?? true;`,
+    ],
+    ['    return { target, universe, session };\n}', `    return { target, universe, session };
+    } catch (error) {
+        try { universe.dispose(); }
+        catch (cleanupError) { logger?.('Failed to dispose failed DevTools universe', cleanupError); }
+        throw error;
+    }
+}`],
     );
   } else if (path === 'build/src/ToolHandler.js') {
     edits.push(['                    response.setPage(page);', '                    await page.acquire();\n                    await page.activateEmulation();\n                    response.setPage(page);']);

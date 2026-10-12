@@ -6,7 +6,10 @@
     {
       "path": "build/src/McpPage.js",
       "originalSha256": "829f11b3cb4c7b87dbb4f5b6a3f62583f4fc05746daee21e629287247debb340",
-      "patchedSha256": "b1ba7b030c0a20a7ae8980801e3422af1edfe5b21cc50e6227f3bd6855ca6a2a"
+      "patchedSha256": "87a3858d59b7b5f5bc9b64388e0c714ca4cfd21028f9fbe310617db49b27b383",
+      "previousPatchedSha256s": [
+        "b1ba7b030c0a20a7ae8980801e3422af1edfe5b21cc50e6227f3bd6855ca6a2a"
+      ]
     },
     {
       "path": "build/src/ToolHandler.js",
@@ -56,6 +59,20 @@
       "path": "build/src/tools/script.js",
       "originalSha256": "99a0a8c40209c71fb7ca2822fa7150f0550d76a4c032d465e927456501093279",
       "patchedSha256": "8611f63a097bf6cc4f343bb9fe323d8cfadce6ab5e95809c97a458f50d5f7637"
+    },
+    {
+      "path": "build/src/devtools/DevtoolsUtils.js",
+      "originalSha256": "de03730a2a94bc1bf43b7d17748e79490e74b145e31c607e91bf8e67b8c46fa5",
+      "patchedSha256": "7fe48bcc7fd95c476299956f84b7eb70fe5b7f85b26c7a14613904d597402c85",
+      "previousPatchedSha256s": [
+        "1f532c5aebf8915223a387c3e143c68a562ce5bc4e7918f4eb206dbd250b2bb0"
+      ]
+    },
+    {
+      "path": "build/src/collectors/ServiceWorkerCollector.js",
+      "originalSha256": "19b54696f20e20af47636beafe3c2d3ff2963ace13a0ffef1857ad9197ac1b29",
+      "patchedSha256": "5b5a19a7cd54ce7e8ab2033c625394d85ae191564cabda02f32a6acfa3e385f1",
+      "payload": "ServiceWorkerCollector.js"
     }
   ]
 }

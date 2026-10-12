@@ -4,6 +4,12 @@
 
 共享模式关闭 source maps 和 usage statistics，暂不支持 `--category-extensions`。需要这些功能时使用原 `dist/index.js` STDIO 模式。实际 `reach` 仍会向 TypeSafe 发送原有决策状态，使用前沿用原项目的凭据与授权范围；自动化测试只调用本地 mock。本方案不使用 LaunchAgent、登录项或系统服务；后端由 MCP 入口按需创建，并按会话生命周期回收。
 
+从 `0.1.1-slothg.6` 起，维护的 Chrome MCP 依赖补丁在建立 DebuggerModel 前禁用异步调用栈收集。其他 inspector 连接请求的异步栈会同时出现在日常 DevTools，可能让其 Console DOM 大幅膨胀；只在日常 DevTools 勾选禁用不足以覆盖 MCP 的独立连接。此修正减少 MCP 的跨异步任务堆栈信息，不改变页面的 async/await、Promise 或定时器执行。更新安装后需重启已有后端，释放旧的调试连接。
+
+从 `0.1.1-slothg.7` 起，每个扩展 Service Worker 日志采集器合计最多保留 30,000 条，跨扩展按时间顺序淘汰最旧消息；淘汰、clearLogs 和 dispose 会释放参数句柄及异常对象，dispose 同时清空缓存。同一 Puppeteer ConsoleMessage 被多个 MCP 会话保留时，等最后一个持有者释放，避免影响其他会话查看参数。普通页面 Console 仍为每次导航 10,000 条、最多 3 次导航，合计 30,000 条；数量上限不等于字节上限。
+
+此版本也补齐 Service Worker 订阅失败或关闭时尚在初始化的连接清理、DevTools universe 初始化失败的 dispose/detach，以及第三方开发工具失败后的 DOM stash 和新句柄清理。第三方工具输入 UID 的句柄由原快照持有，失败清理不释放这些借用句柄。
+
 ## 使用正常 MCP 入口
 
 安装运行包至 `~/.agents/mcp/jev-reach/` 后，在 Codex 配置中使用下面的入口。参数沿用原 Chrome 连接方式；不需要先手动启动 HTTP 服务。
@@ -86,13 +92,13 @@ startup_timeout_sec = 30
 
 HTTP `DELETE /mcp` 终止当前 MCP session；客户端仅关闭网络连接时，服务可能要等会话超时才能回收。因此需要 SDK 客户端调用 `terminateSession()`，或保留有限的会话超时。会话退出不会关闭其他会话使用的浏览器后端；服务空闲退出或收到退出信号才统一回收。Ctrl+C 停止服务；客户端随后必须重新初始化 HTTP session。
 
-焦点恢复只撤销本连接设置的覆盖，不主动改变用户当前前台窗口。模拟设置恢复按工具调用切换；不保证其他外部 CDP 客户端同时修改同页时的隔离。source maps 与扩展 worker 采集因上游全局状态暂不启用。
+焦点恢复只撤销本连接设置的覆盖，不主动改变用户当前前台窗口。模拟设置恢复按工具调用切换；不保证其他外部 CDP 客户端同时修改同页时的隔离。source maps 与扩展工具入口因上游全局状态暂不启用；上游仍可能订阅已连接 Chrome 的现有扩展 Service Worker，其日志遵循上述保留与释放规则。
 
 ## 维护与回滚兼容补丁
 
 `patches/chrome-devtools-mcp-1.9.0/manifest.json` 记录原始及修补摘要，`scripts/devtools-patch-transforms.mjs` 使用唯一源码锚点完成局部修改。Console 与 QA 载荷来自现有 `my-codex/tools/cocos-jev-qa/`，保留既有六项 Console 测试和 QA exports。
 
-补丁处理九个依赖文件：`McpPage.js`、`ToolHandler.js`、`tools/pages.js`、`tools/script.js`、`index.js`、`collectors/PageCollector.js`、`tools/input.js` 以及新增共享资源、QA helper。应用前校验整组文件，原文件备份至依赖包的 `.jev-reach-originals/`；已知摘要之外的内容会拒绝覆盖。
+补丁处理十一个依赖文件：`McpPage.js`、`ToolHandler.js`、`tools/pages.js`、`tools/script.js`、`index.js`、`devtools/DevtoolsUtils.js`、`collectors/PageCollector.js`、`collectors/ServiceWorkerCollector.js`、`tools/input.js` 以及新增共享资源、QA helper。应用前校验整组文件，原文件备份至依赖包的 `.jev-reach-originals/`；已知摘要之外的内容会拒绝覆盖。
 
 ```sh
 node scripts/apply-devtools-patches.mjs --check

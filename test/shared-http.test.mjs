@@ -1,7 +1,7 @@
 /** Bounded, local-only acceptance of shared resources and session lifetimes. */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdir, mkdtemp, access } from 'node:fs/promises';
+import { mkdir, mkdtemp, access, readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -12,6 +12,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { McpServer as SdkServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ListRootsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { launch } from 'puppeteer-core';
 import { startFixture, startMockJev, textOf, payload, KEY_VAR } from './helpers.mjs';
 import { OperationQueue } from '../dist/scheduler.js';
 import { startHttpService } from '../dist/http.js';
@@ -65,6 +66,68 @@ test('one queue admits nested reach helpers and skips aborted waiting operations
   assert.deepEqual(events, ['start', 'nested', 'end', 'next']);
 });
 
+test('page discovery keeps client-local aliases and rejects foreign or stale ids', { timeout: 45000 }, async () => {
+  process.env.JEV_REACH_SHARED = '1';
+  const site = await startFixture();
+  let browser, http;
+  const clients = [];
+  const targetUrl = site.url + '/login.html';
+  /** Discover only this fixture's exact URL through the receiving client's namespace. */
+  const discover = async client => {
+    const listing = textOf(await call(client, 'list_pages'));
+    const matches = listing.split('\n').filter(line => line.includes(`(${targetUrl})`));
+    assert.equal(matches.length, 1);
+    return Number(matches[0].match(/^\d+/)[0]);
+  };
+  try {
+    browser = await launch({ channel: 'chrome', headless: true });
+    assert.ok(browser.wsEndpoint(), 'identity validation requires a WebSocket connection');
+    const args = parseArguments('page-binding-test', [process.execPath, 'page-binding-test',
+      '--ws-endpoint', browser.wsEndpoint(), '--no-usage-statistics', '--no-performance-crux']);
+    args.sourceMaps = false;
+    http = await startHttpService(options, queue => createSessionServer(args, queue), closeBrowser);
+    const a = await connect(http.url, 'page-owner'); clients.push(a);
+    const lease = JSON.parse(textOf(await call(a.client, 'debug_session_acquire')));
+    await call(a.client, 'new_page', { url: targetUrl });
+    const b = await connect(http.url, 'qa-connection'); clients.push(b);
+    await call(b.client, 'debug_session_acquire', { leaseToken: lease.leaseToken });
+    const pageTool = (await b.client.listTools()).tools.find(tool => tool.name === 'list_pages');
+    assert.match(pageTool.description, /MCP connection only/);
+    const idA = await discover(a.client);
+    const idB = await discover(b.client);
+    assert.notEqual(idA, idB, 'the same physical tab has connection-local aliases');
+    for (const [client, pageId] of [[a.client, idA], [b.client, idB]]) {
+      assert.match(textOf(await call(client, 'evaluate_script', { pageId, function: '() => location.href' })), /login\.html/);
+    }
+    const identityA = JSON.parse(textOf(await call(a.client, 'qa_page_identity', { pageId: idA })));
+    const identityB = JSON.parse(textOf(await call(b.client, 'qa_page_identity', { pageId: idB })));
+    assert.equal(identityA.targetKey, identityB.targetKey, 'aliases must resolve to the same physical target');
+    const foreign = await b.client.callTool({ name: 'evaluate_script', arguments: { pageId: idA, function: '() => location.href' } });
+    assert.equal(foreign.isError, true);
+    assert.match(textOf(foreign), /PAGE_ID_UNAVAILABLE/);
+    assert.match(textOf(foreign), /list_pages/);
+    const foreignRelease = await b.client.callTool({ name: 'release_page', arguments: { pageId: idA } });
+    assert.equal(foreignRelease.isError, true);
+    assert.match(textOf(foreignRelease), /PAGE_ID_UNAVAILABLE/);
+    await b.close();
+    await waitFor(() => http.sessions.size === 1);
+    const c = await connect(http.url, 'qa-reconnected'); clients.push(c);
+    await call(c.client, 'debug_session_acquire', { leaseToken: lease.leaseToken });
+    const idC = await discover(c.client);
+    assert.notEqual(idB, idC, 'reconnecting invalidates the previous alias');
+    const stale = await c.client.callTool({ name: 'evaluate_script', arguments: { pageId: idB, function: '() => location.href' } });
+    assert.equal(stale.isError, true);
+    assert.match(textOf(stale), /PAGE_ID_UNAVAILABLE/);
+    assert.match(textOf(await call(c.client, 'evaluate_script', { pageId: idC, function: '() => location.href' })), /login\.html/);
+    assert.equal(JSON.parse(textOf(await call(c.client, 'qa_page_identity', { pageId: idC }))).targetKey, identityA.targetKey);
+    console.log('Page binding evidence: independent aliases, equal targetKey, foreign/stale rejection and fresh rediscovery passed.');
+  } finally {
+    for (const client of clients.reverse()) await client.close();
+    await http?.close(); await browser?.close(); await site.close();
+    delete process.env.JEV_REACH_SHARED;
+  }
+});
+
 test('two real Chrome clients keep state and roots separate while sharing page collectors', { timeout: 45000 }, async () => {
   process.env.JEV_REACH_SHARED = '1';
   const site = await startFixture();
@@ -105,6 +168,8 @@ test('two real Chrome clients keep state and roots separate while sharing page c
     assert.equal(overLimit.status, 503);
     const tools = (await a.client.listTools()).tools.map(tool => tool.name);
     for (const name of ['reach', 'release_page', 'qa_pointer_path', 'qa_preview_install', 'qa_preview_remove']) assert.ok(tools.includes(name), name);
+    const lease = JSON.parse(textOf(await call(a.client, 'debug_session_acquire')));
+    await call(b.client, 'debug_session_acquire', { leaseToken: lease.leaseToken });
     await call(a.client, 'list_pages');
     await call(b.client, 'list_pages');
     assert.equal(sharedPageDiagnostics().length, 0, 'discovery must not create collectors');
@@ -146,12 +211,16 @@ test('two real Chrome clients keep state and roots separate while sharing page c
     assert.ok(mock.requests.length >= 2);
     await a.close(); a = undefined;
     await waitFor(() => http.sessions.size === 1);
+    await call(b.client, 'debug_session_release');
     await call(b.client, 'evaluate_script', { pageId: idsB[0], function: '() => document.title' });
     await call(b.client, 'release_page', { pageId: idsB[0] });
     await call(b.client, 'release_page', { pageId: idsB[1] });
     await drainSharedPageReleases();
     assert.equal(sharedPageDiagnostics().length, 0, 'the last owner releases collectors');
-    for (const { calls } of focus.values()) assert.deepEqual(calls, [true, false], 'focus is enabled once and restored by the last owner');
+    for (const { calls } of focus.values()) {
+      assert.equal(calls.length % 2, 0, 'each lease restores its focus override');
+      calls.forEach((value, index) => assert.equal(value, index % 2 === 0));
+    }
     await call(b.client, 'evaluate_script', { pageId: idsB[0], function: '() => document.title' });
     assert.equal(sharedPageDiagnostics().length, 1, 'evaluate_script must acquire a released page');
     await call(b.client, 'release_page', { pageId: idsB[0] });
@@ -162,6 +231,62 @@ test('two real Chrome clients keep state and roots separate while sharing page c
     for (const [page, { original }] of focus) page.emulateFocusedPage = original;
     await mock.close(); await site.close();
     delete process.env.JEV_REACH_SHARED;
+  }
+});
+
+test('preview session browser traffic stays exclusive across calls and QA delegation', { timeout: 45000 }, async () => {
+  process.env.JEV_REACH_SHARED = '1';
+  const site = await startFixture();
+  const args = parseArguments('preview-session-test', [process.execPath, 'preview-session-test',
+    '--isolated', '--headless', '--no-usage-statistics', '--no-performance-crux']);
+  args.sourceMaps = false;
+  const http = await startHttpService({ ...options, maxSessions: 4 },
+    queue => createSessionServer(args, queue), closeBrowser);
+  const clients = [];
+  try {
+    for (const name of ['A', 'B', 'C', 'QA']) clients.push(await connect(http.url, name));
+    const [a, b, c, qa] = clients;
+    const lease = JSON.parse(textOf(await call(a.client, 'debug_session_acquire')));
+    await call(a.client, 'new_page', { url: site.url + '/' });
+    const listingA = textOf(await call(a.client, 'list_pages'));
+    const pageA = Number(listingA.split('\n').find(line => line.includes(site.url + '/')).match(/(\d+):/)[1]);
+    await call(a.client, 'evaluate_script', { pageId: pageA, function: '() => { window.previewOrder = ["A1"]; return window.previewOrder; }' });
+    const qaLease = JSON.parse(textOf(await call(qa.client, 'debug_session_acquire', { leaseToken: lease.leaseToken, externalCleanup: true })));
+    const qaPage = Number(textOf(await call(qa.client, 'list_pages')).split('\n').find(line => line.includes(site.url + '/')).match(/(\d+):/)[1]);
+    const bundlePath = resolve('test/fixtures/qa-bundle.js');
+    const install = { bundlePath, sha256: createHash('sha256').update(await readFile(bundlePath)).digest('hex'),
+      expectedOrigin: site.url, ownerId: 'disconnect-fixture', ownerExpiresAtUnixMs: Date.now() + 10000 };
+    await call(qa.client, 'qa_preview_install', { pageId: qaPage, ...install });
+    await call(qa.client, 'evaluate_script', { pageId: qaPage, function: '() => { window.__COCOS_QA__ = {platform: {readBootstrap: () => ({sessionId: "disconnect-fixture"})}, destroy: () => {window.qaDestroyed = true;}}; }' });
+    assert.equal(JSON.parse(textOf(await call(b.client, 'debug_session_acquire'))).status, 'QUEUED');
+    assert.equal(JSON.parse(textOf(await call(c.client, 'debug_session_acquire'))).position, 2);
+    const waitingB = call(b.client, 'debug_session_acquire', { waitMs: 3000 });
+    await call(a.client, 'evaluate_script', { pageId: pageA, function: '() => { window.previewOrder.push("A2"); return window.previewOrder; }' });
+    await call(a.client, 'debug_session_release');
+    assert.equal(JSON.parse(textOf(await call(b.client, 'debug_session_status'))).status, 'RELEASING');
+    await qa.close();
+    assert.equal(JSON.parse(textOf(await call(b.client, 'debug_session_status'))).status, 'RELEASING');
+    const recovered = await connect(http.url, 'QA-cleanup'); clients.push(recovered);
+    const recovery = JSON.parse(textOf(await call(recovered.client, 'debug_session_acquire', {
+      leaseToken: lease.leaseToken, cleanupMemberId: qaLease.memberId, externalCleanup: true })));
+    assert.equal(recovery.status, 'RELEASING');
+    await call(recovered.client, 'debug_session_release');
+    assert.equal(JSON.parse(textOf(await waitingB)).owned, true);
+    const listingB = textOf(await call(b.client, 'list_pages'));
+    const pageB = Number(listingB.split('\n').find(line => line.includes(site.url + '/')).match(/(\d+):/)[1]);
+    assert.match(textOf(await call(b.client, 'evaluate_script', { pageId: pageB, function: '() => window.previewOrder' })), /A1.*A2/s);
+    assert.match(textOf(await call(b.client, 'evaluate_script', { pageId: pageB, function: '() => ({destroyed: window.qaDestroyed, removed: !window.__COCOS_QA__})' })), /"destroyed":true,"removed":true/);
+    await call(b.client, 'qa_preview_install', { pageId: pageB, ...install, ownerId: 'next-fixture' });
+    const waitingC = call(c.client, 'debug_session_acquire', { waitMs: 3000 });
+    await call(b.client, 'debug_session_release');
+    assert.equal(JSON.parse(textOf(await waitingC)).owned, true);
+    const invalid = await a.client.callTool({ name: 'debug_session_acquire', arguments: { leaseToken: lease.leaseToken } });
+    assert.equal(invalid.isError, true);
+    await call(c.client, 'debug_session_release');
+    assert.equal(http.queue.preview.status('').status, 'IDLE');
+  } finally {
+    await Promise.all(clients.map(client => client.close()));
+    await http.close(); await site.close();
   }
 });
 

@@ -22,6 +22,15 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
+/**
+ * 创建本机共享 MCP 服务，协议请求不占用预览名额。
+ * @param options 服务端口与连接回收参数。
+ * @param createSession 创建具有自身有序清理入口的会话。
+ * @param closeBackend 全部会话结束后清理浏览器连接。
+ * @param identity 用于入口复用校验的版本和配置标识。
+ * @param onIdle 达到无会话期限时的退出回调。
+ * @returns HTTP 地址、状态及关闭入口。
+ */
 export async function startHttpService(
   options: ServiceOptions,
   createSession: (queue: OperationQueue) => Promise<SessionServer>,
@@ -43,7 +52,7 @@ export async function startHttpService(
     session.closing = true;
     sessions.delete(id);
     if (!sessions.size) idleSince = Date.now();
-    await queue.run(() => session.server.close());
+    await session.server.close();
   };
   const dropInBackground = (id: string) => {
     void drop(id).catch(error => console.error("[jev-reach] session cleanup failed", error));
@@ -64,7 +73,8 @@ export async function startHttpService(
     }
     if (request.url === "/health" && request.method === "GET") {
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ status: "ready", sessions: sessions.size, pending: queue.pending, ...(identity ? { identity } : {}) }));
+      response.end(JSON.stringify({ status: "ready", sessions: sessions.size, pending: queue.pending,
+        preview: queue.preview.status(""), ...(identity ? { identity } : {}) }));
       return;
     }
     if (request.url !== "/mcp") { fail(404, "Unknown endpoint"); return; }
@@ -106,11 +116,11 @@ export async function startHttpService(
       if (request.method === "POST") session.busy++;
       try { await session.transport.handleRequest(request, response, body); }
       finally { if (request.method === "POST") session.busy--; session.lastSeen = Date.now(); }
-      if (created && !session.transport.sessionId) await queue.run(() => session!.server.close());
+      if (created && !session.transport.sessionId) await session!.server.close();
     } catch (error) {
       if (created && session) {
         if (session.transport.sessionId) await drop(session.transport.sessionId);
-        else await queue.run(() => session!.server.close());
+        else await session!.server.close();
       }
       fail(400, error instanceof Error ? error.message : String(error));
     } finally {
@@ -132,6 +142,7 @@ export async function startHttpService(
     if (closing) return closing;
     stopped = true;
     clearInterval(timer);
+    queue.preview.close();
     closing = (async () => {
       await Promise.all([...sessions.keys()].map(drop));
       await queue.run(closeBackend);

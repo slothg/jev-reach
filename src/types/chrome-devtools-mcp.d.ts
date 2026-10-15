@@ -37,6 +37,13 @@ declare module "chrome-devtools-mcp/build/src/jev-shared-pages.js" {
   export function sharedPageDiagnostics(): Array<{ url: string; owners: number; consoleMessages: number; requests: number }>;
 }
 
+declare module "chrome-devtools-mcp/build/src/tools/qa-pointer-path.js" {
+  export const qaPreviewRemove: {
+    handler(request: { page: { pptrPage: import("puppeteer-core").Page }; params: { ownerId: string } },
+      response: { appendResponseLine: (line: string) => void }): Promise<void>;
+  };
+}
+
 declare module "chrome-devtools-mcp/build/src/config/mcp-options.js" {
   export function parseArguments(version: string, argv?: string[], env?: NodeJS.ProcessEnv): Record<string, unknown>;
 }

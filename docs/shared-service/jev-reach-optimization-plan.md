@@ -15,6 +15,7 @@
 | JEV-02 | 已实施：页面发现不创建采集器或 DevTools universe；显式选择或页面工具调用时接管；release_page 释放接管 | 通过：构建与确切入口复核 | 通过：列出页面零采集；最后接管者释放后无采集器；evaluate_script 可重新接管 |
 | JEV-03 | 已实施：焦点模拟随接管启停；会话切换恢复自身 emulation 设置 | 通过：构建 | 通过：双会话 User-Agent 切换；真实 Puppeteer 调用记录每页焦点覆盖启用一次、最后释放时关闭一次。未验收普通 Chrome 前台操作 |
 | JEV-05 | 已实施：HTTP DELETE 关闭本会话；服务端口独占先于浏览器初始化；会话过期、服务空闲退出与信号关闭 | 通过：构建 | 通过：一客户端退出后另一客户端继续；重复端口失败；活动请求不过期；过期会话回收；CLI 空闲退出；CDP 不响应且最后客户端退出后仍按空闲期限进入有界清理并结束进程。SIGINT/SIGTERM 清理仅源码复核 |
+| JEV-06 | 已实施并部署 .8：整轮预览单聊天占用及 FIFO 排队，普通 Chrome 与 Cocos QA 共用，保留既有 QA 全局锁；见 [设计](../preview-session-queue/preview-session-queue-specs.md) 与 [计划](../preview-session-queue/preview-session-queue-plans.md) | 构建、6 项调度、限定浏览器与 7 项 QA 验证通过 | 2026-10-13 现有 noodleRestaurant 预览只读交接通过；没有点击/刷新/导航；旧 MCP 连接需重新初始化 |
 
 ## 预先限定的命令和停止条件
 

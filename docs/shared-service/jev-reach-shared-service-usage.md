@@ -78,6 +78,20 @@ startup_timeout_sec = 30
 
 运行目录放到 `~/.agents/mcp/jev-reach/`；Git 源码仍保留在 `/Volumes/data/mygithubrepos/jev-reach`。发布到本机时先构建，`npm pack --ignore-scripts` 保存编译结果，再从 tgz 执行运行目录的 `npm install --omit=dev --no-audit --no-fund`，最后运行安装目录 `scripts/apply-devtools-patches.mjs --check`。具体本机切换结果见优化计划。
 
+## 整轮预览排队
+
+共享模式默认只允许一个逻辑聊天进行整轮预览测试。普通 Chrome 工具与 Cocos QA 使用同一占用；QA 已有的全局会话锁继续保留。等待不占用单次操作队列，协议初始化和 ping 不占用浏览器。
+
+测试准备完成后调用 debug_session_acquire，waitMs 最大 30000。返回 HELD 且 owned 为 true 才可操作；QUEUED 表示尚未执行，回包给出预约位置。继续等待沿用同一连接的 FIFO 预约，不保存或后台重放输入正文；不再需要预约时用 debug_session_release 取消。
+
+混用 QA 时，将取得的 leaseToken 作为 debugLeaseToken 传给 qa_web_pages、qa_web_prepare 或 qa_web_lock；QA 内部连接加入同一聊天组。只使用 QA 时，qa_web_pages 自动申请并返回 debugLeaseToken。不要按页面 ID 或显示名称猜测两个连接属于同一聊天。
+
+取证和 QA detach/client close 完成后，在 finally 中调用根连接的 debug_session_release。release_page 只释放页面采集，不结束整轮占用。debug_session_status 可查询所有者、队列和清理状态，不续期。
+
+无实际活动 10 分钟后回收占用，未续期预约 2 分钟后移除；活动 Chrome 调用和 QA 用例保持占用。RELEASING 等待旧活动与 QA 清理确认。QA 连接异常退出时，旧占用仍阻塞，由 QA 主机先停止 Runtime，再凭本地能力恢复清理；cleanupMemberId、externalCleanup、activity 和 activityId 为主机内部生命周期参数。失败时不强行放行下一聊天。
+
+本后端不控制用户手动操作或绕过共享服务的其他 CDP 客户端。关联凭证只用于本地，不向 TypeSafe 等外部服务发送。
+
 ## 接管与释放页面
 
 `list_pages` 只创建会话内页面描述，不初始化 Console/Network 采集器、DevTools universe 或焦点模拟。`select_page`、`new_page`、页面工具、`evaluate_script` 和 `reach` 在实际使用目标页时接管页面。

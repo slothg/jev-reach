@@ -17,8 +17,8 @@ import { extractServiceArgs, startHttpService } from "./http.js";
 import { backendIdentity } from "./service-config.js";
 
 const [major, minor] = process.version.substring(1).split(".").map(Number) as [number, number];
-if (major < 20 || (major === 20 && minor < 19) || (major === 22 && minor < 12)) {
-  console.error(`ERROR: jev-reach needs Node 20.19+, 22.12+, or newer. Found ${process.version}.`);
+if (major < 22 || (major === 22 && minor < 18)) {
+  console.error(`ERROR: jev-reach needs Node 22.18+ or newer. Found ${process.version}.`);
   process.exit(1);
 }
 

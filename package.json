@@ -1,6 +1,6 @@
 {
   "name": "jev-reach",
-  "version": "0.1.1-slothg.7",
+  "version": "0.1.1-slothg.10",
   "description": "chrome-devtools-mcp plus one tool: Jev walks the browser to the spot, Claude makes one devtools call there.",
   "type": "module",
   "license": "MIT",
@@ -17,6 +17,7 @@
     "jev-reach-bridge": "dist/bridge.js"
   },
   "files": [
+    "vendor",
     "dist",
     "scripts",
     "patches",
@@ -47,7 +48,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
-    "@typesafe-ai/sdk": "^0.6.0",
+    "@slothg/jev-vision": "file:vendor/slothg-jev-vision-0.1.0.tgz",
+    "@typesafe-ai/sdk": "0.7.0",
     "chrome-devtools-mcp": "1.9.0"
   },
   "devDependencies": {
@@ -57,8 +59,11 @@
     "zod": "^3.25.0"
   },
   "engines": {
-    "node": ">=20.19"
+    "node": ">=22.18"
   },
+  "bundleDependencies": [
+    "@slothg/jev-vision"
+  ],
   "publishConfig": {
     "access": "public"
   }

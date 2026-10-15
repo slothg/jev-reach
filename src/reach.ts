@@ -20,6 +20,7 @@ import { zod as z } from "chrome-devtools-mcp/build/src/third_party/index.js";
 import { ensureBrowserConnected, ensureBrowserLaunched } from "chrome-devtools-mcp/build/src/browser.js";
 import { askStep, excerpt, getClient, newUsage, shortlist } from "./jev.js";
 import type { StepState, Usage } from "./jev.js";
+import { inspectImage, imageSize } from "@slothg/jev-vision";
 import {
   bindingSatisfied,
   consumedKeys,
@@ -82,6 +83,7 @@ interface ReachInput {
   allow_irreversible?: boolean;
   settle_ms?: number;
   timeout_ms?: number;
+  vision?: boolean;
 }
 
 // ── Registration ────────────────────────────────────────────────────────────
@@ -111,6 +113,7 @@ export function registerReach(server: SdkMcpServer, serverArgs: Record<string, u
         allow_irreversible: z.boolean().optional().describe("Let Jev click through order, pay, send, delete, publish. Default false."),
         settle_ms: z.number().int().min(0).max(10_000).optional().describe(`Network-quiet time to wait after each action. Default ${DEFAULT_SETTLE_MS}.`),
         timeout_ms: z.number().int().min(1_000).max(600_000).optional().describe(`Wall-clock budget for the whole walk. Default ${DEFAULT_TIMEOUT_MS}.`),
+        vision: z.boolean().optional().describe("Opt in to uploading viewport screenshots to TypeSafe for element selection. Default false; cannot be combined with supplied values."),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
@@ -130,6 +133,33 @@ export function registerReach(server: SdkMcpServer, serverArgs: Record<string, u
       }
     },
   );
+  server.registerTool("inspect_visual", {
+    description: "Inspect the selected page screenshot with experimental Jev vision or locate one target with Box. Explicit remote-image opt-in is required. Returns normalized/pixel edges as evidence; never clicks or types.",
+    inputSchema: {
+      question: z.string().min(1).max(2000).optional(),
+      target: z.string().min(1).max(2000).optional(),
+      allow_remote: z.boolean(),
+      tab_url_prefix: z.string().optional(),
+      min_presence: z.number().min(0.5).max(1).optional(),
+      min_confidence: z.number().min(0).max(1).optional(),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+  }, async (input, extra) => {
+    const release = await mutex.acquire();
+    try {
+      if (!input.allow_remote) throw new Error("Remote image authorization required");
+      if (!input.question && !input.target) throw new Error("Supply question or target");
+      const listed = await warmUp(server, extra.signal);
+      const selected = resolvePage ? await resolvePage(input.tab_url_prefix)
+        : await pickPage(await currentBrowser(serverArgs), parsePages(listed), input.tab_url_prefix);
+      const data = await selected.page.screenshot({ type: "png", captureBeyondViewport: false });
+      const result = await inspectImage({ data, question: input.question, target: input.target,
+        minPresence: input.min_presence, minConfidence: input.min_confidence }, getClient(), extra.signal);
+      return { content: [{ type: "text" as const, text: JSON.stringify({ ...result, page_id: selected.pageId }) }] };
+    } catch (error) {
+      return { isError: true, content: [{ type: "text" as const, text: error instanceof Error ? error.message : "Visual inspection failed" }] };
+    } finally { release(); }
+  });
 }
 
 // ── Warm-up: the stock server owns Chrome and the collectors ───────────────
@@ -227,6 +257,7 @@ async function runReach(server: SdkMcpServer, serverArgs: Record<string, unknown
   const started = performance.now();
   const values = input.values ?? {};
   const valueKeys = Object.keys(values);
+  if (input.vision && valueKeys.length) throw new Error("Vision cannot upload screenshots while supplied values may be displayed; use text mode with values");
   const maxSteps = input.max_steps ?? DEFAULT_MAX_STEPS;
   const settleMs = input.settle_ms ?? DEFAULT_SETTLE_MS;
   const timeoutMs = input.timeout_ms ?? DEFAULT_TIMEOUT_MS;
@@ -309,6 +340,11 @@ async function runReach(server: SdkMcpServer, serverArgs: Record<string, unknown
         element_count: snap.total,
       };
       const offered = await shortlist(tsc, state, ranked, usage, signal);
+      if (input.vision) {
+        const screenshot = await page.screenshot({ type: "png", captureBeyondViewport: false });
+        imageSize(screenshot);
+        state.screenshot = screenshot;
+      }
       const consumed = consumedKeys(offered, valueKeys, values, typed);
       const { answers, latency_ms } = await askStep(tsc, state, offered, valueKeys, usage, signal, (c, key) => consumed.has(key) || bindingSatisfied(c, key, values, typed));
       lastGoal = answers.goal;

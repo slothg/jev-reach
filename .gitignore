@@ -4,3 +4,4 @@ dist/
 .env.*
 *.tgz
 .test-artifacts/
+skill_cache

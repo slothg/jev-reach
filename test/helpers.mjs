@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
+import { zstdDecompressSync } from "node:zlib";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
@@ -45,10 +46,12 @@ export async function startFixture() {
 export async function startMockJev({ pick, goal, irreversible = () => 0.05 }) {
   const requests = [];
   const server = createServer((req, res) => {
-    let raw = "";
-    req.on("data", (d) => (raw += d));
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
     req.on("end", () => {
-      const body = JSON.parse(raw || "{}");
+      const raw = Buffer.concat(chunks);
+      const decoded = req.headers["content-encoding"] === "zstd" ? zstdDecompressSync(raw) : raw;
+      const body = JSON.parse(decoded.toString("utf8") || "{}");
       requests.push(body);
       const answers = {};
       for (const [id, q] of Object.entries(body.questions ?? {})) {

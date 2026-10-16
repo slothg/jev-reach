@@ -17,6 +17,18 @@
 | JEV-05 | 已实施：HTTP DELETE 关闭本会话；服务端口独占先于浏览器初始化；会话过期、服务空闲退出与信号关闭 | 通过：构建 | 通过：一客户端退出后另一客户端继续；重复端口失败；活动请求不过期；过期会话回收；CLI 空闲退出；CDP 不响应且最后客户端退出后仍按空闲期限进入有界清理并结束进程。SIGINT/SIGTERM 清理仅源码复核 |
 | JEV-06 | 已实施并部署 .8：整轮预览单聊天占用及 FIFO 排队，普通 Chrome 与 Cocos QA 共用，保留既有 QA 全局锁；见 [设计](../preview-session-queue/preview-session-queue-specs.md) 与 [计划](../preview-session-queue/preview-session-queue-plans.md) | 构建、6 项调度、限定浏览器与 7 项 QA 验证通过 | 2026-10-13 现有 noodleRestaurant 预览只读交接通过；没有点击/刷新/导航；旧 MCP 连接需重新初始化 |
 
+## 2026-10-16：JEV-05 闲置桥接会话回收补充
+
+用户已确认仅修改源码并定向验证，暂不安装、不重启共享服务。根因是存活的 STDIO 桥接持续 ping，刷新 HTTP `lastSeen`，使闲置聊天长期占据会话上限。沿用 JEV-05 的 HTTP DELETE/关闭清理和 JEV-06 的预览状态查询，只在 `src/bridge.ts` 补充真实活动计时、双向在途 RPC 保护、闲置 HTTP 休眠及串行恢复；保持现有后端、队列、参数、版本和 16 会话默认上限。
+
+恢复复用后端发现、启动锁和初始化流程。休眠丢弃本连接的临时上下文；重新列页成功前阻挡页面操作，并返回明确的 `IDLE_SESSION_RECREATED`。不自动重放执行结果不明的请求。占用、排队、清理失败或状态不明确均保留连接。
+
+预先限定验证命令为 `rtk npm run build` 和 `rtk node --test --test-name-pattern "idle bridge" test/bridge.test.mjs`。准备与执行只使用现有依赖、随机独立端口、现有 HTTP 服务和 SDK 模拟会话，不连接用户 Chrome，不调用生产 4071 服务。预计实现与验证 30–60 分钟，定向执行约十余秒；必要检查通过即停止，不运行 `npm test` 或整套浏览器验收。测试覆盖双客户端隔离、协议 ping、不重复恢复、列页准入、长 RPC、服务端请求、取消、HELD/QUEUED/RELEASING、未知/失败状态、恢复失败清理和禁用过期。
+
+静态/构建验证：通过，最终 `rtk npm run build` 返回 0，依赖补丁检查返回 `PATCHED`、11 文件。隔离模拟运行验证：7 项均取得通过结果；首轮限定命令为 6/7，其中服务端请求用例未等待 SDK 的独立 GET 推送通道就绪，SDK 丢弃了过早发出的请求。fixture 改为等待该通道实际建立，单项通过。随后补齐取消请求时的列页记录清理和本地 ping 写入失败处理，最终仅重跑直接依赖：`rtk node --test --test-name-pattern 'idle bridge (retains backend requests|reclaims only idle clients|honors disabled)' test/bridge.test.mjs`，3/3 通过，耗时 2.69 秒；另外四项复用首轮通过结果。没有重跑未受影响用例或整套测试。
+
+修改范围为 `src/bridge.ts`、`test/bridge.test.mjs` 和现有两份共享服务文档；未修改版本、配置或后端/队列代码。原正常启动与 roots 浏览器用例改用 `--session-idle-ms=0`，保留其原有“连接保持到 EOF”的验证边界，此次未执行该真实 Chrome 用例。安装、现有共享服务和真实 Chrome 验收：未执行，按用户授权边界留待后续部署；当前运行的旧桥接不会加载此源码修正。
+
 ## 预先限定的命令和停止条件
 
 仓库内运行 `rtk npm run build`，随后运行 `rtk node --test test/server.test.mjs`。部署复核发现上游参数解析器内部调用 `hideBin()`，Fork 曾错误传入不带 Node/script 前缀的参数，导致前两个选项丢失；入口和 HTTP 测试 fixture 恢复完整 argv，并增加首个分类开关实际影响工具列表的回归用例。重跑启动、桥接和共享 HTTP 三个受影响的文件；Console 载荷未变，不重复该验证。
